@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP8266 Live Voltage Web Dashboard</title>
+    <!-- Chart.js from CDN (cached on first load, offline capable once cached) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #F8FAFC;
+            --card-bg: #FFFFFF;
+            --text-primary: #0F172A;
+            --text-secondary: #64748B;
+            --accent: #2563EB;
+            --accent-hover: #1D4ED8;
+            --border: #E2E8F0;
+            --success: #10B981;
+            --danger: #EF4444;
+            --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- SIDEBAR PANEL --- */
+        .sidebar {
+            width: 300px;
+            background-color: var(--card-bg);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .logo-section h1 {
+            color: var(--accent);
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+
+        .logo-section p {
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .divider {
+            height: 1px;
+            background-color: var(--border);
+        }
+
+        .section-title {
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Buttons & Selectors */
+        .btn {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background-color: var(--card-bg);
+            color: #334155;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .btn:hover {
+            background-color: #F8FAFC;
+            border-color: #94A3B8;
+        }
+
+        .btn-primary {
+            background-color: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--danger);
+            border-color: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+
+        /* Status Grid */
+        .status-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            row-gap: 8px;
+            column-gap: 12px;
+            font-size: 12px;
+        }
+
+        .status-label {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .status-value {
+            font-weight: 700;
+            text-align: right;
+        }
+
+        #status-indicator {
+            color: var(--danger);
+        }
+
+        .console-log {
+            font-size: 11px;
+            color: var(--danger);
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        /* --- MAIN DASHBOARD AREA --- */
+        .main-content {
+            flex: 1;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        /* Top Grid - Readouts & Gauges */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .card-title {
+            align-self: flex-start;
+            color: var(--text-secondary);
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        /* Large Readout layout */
+        .readout-panel {
+            align-self: stretch;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .large-val-row {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+
+        .large-value {
+            font-size: 40px;
+            font-weight: 850;
+            color: var(--accent);
+        }
+
+        .large-unit {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-secondary);
+        }
+
+        .readout-subtext {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .sparkline-box {
+            height: 40px;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .canvas-gauge {
+            width: 100%;
+            max-width: 220px;
+            height: 140px;
+        }
+
+        /* Stats Sub-Grid in Dashboard */
+        .stats-grid-card {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        .mini-stat {
+            background-color: var(--bg-color);
+            border: 1px solid #F1F5F9;
+            border-radius: 6px;
+            padding: 6px;
+            text-align: center;
+        }
+
+        .mini-stat-title {
+            color: var(--text-secondary);
+            font-size: 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .mini-stat-value {
+            font-size: 13px;
+            font-weight: 750;
+            color: #1E293B;
+            margin-top: 2px;
+        }
+
+        /* --- BOTTOM PLOTS SECTION --- */
+        .tabs-container {
+            flex: 1;
+            background-color: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 400px;
+        }
+
+        .tab-bar {
+            display: flex;
+            background-color: #F1F5F9;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border: none;
+            background: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-right: 1px solid var(--border);
+        }
+
+        .tab-btn:hover {
+            background-color: #E2E8F0;
+            color: var(--text-primary);
+        }
+
+        .tab-btn.active {
+            background-color: var(--card-bg);
+            color: var(--accent);
+            border-bottom: 2px solid var(--card-bg);
+        }
+
+        .tab-content {
+            flex: 1;
+            padding: 16px;
+            display: none;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .tab-content.active {
+            display: flex;
+            gap: 16px;
+        }
+
+        .chart-container {
+            flex: 1;
+            position: relative;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Time Window selectors inside Tab 4 */
+        .window-selector-row {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .window-btn {
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background-color: var(--card-bg);
+            cursor: pointer;
+        }
+
+        .window-btn.active {
+            background-color: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        /* Modal Dialog */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(15, 23, 42, 0.4);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            width: 360px;
+            padding: 24px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .modal-title {
+            font-weight: 700;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .select-box {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .modal-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 4px;
+            border: 1px solid var(--border);
+            background: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- --- SIDEBAR --- -->
+    <div class="sidebar">
+        <div class="logo-section">
+            <h1>ESP8266 MONITOR</h1>
+            <p>Web Voltage Analyzer</p>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control-group">
+            <div class="section-title">Port Configuration</div>
+            <!-- Browser Web Serial connection triggers connection list dialog natively -->
+            <button class="btn btn-primary" id="btn-connect">Connect ESP8266</button>
+            <button class="btn btn-danger" id="btn-disconnect" disabled>Disconnect</button>
+            <button class="btn" id="btn-simulator">Run Simulator Mode</button>
+        </div>
+
+        <div class="control-group">
+            <div class="section-title">Operations</div>
+            <button class="btn" id="btn-reset">Reset Data & Stats</button>
+            <button class="btn" id="btn-clear">Clear Graphs Only</button>
+            <button class="btn" id="btn-export-csv">Export data to CSV</button>
+            <button class="btn" id="btn-save-image">Save Graph Image</button>
+        </div>
+
+        <div class="control-group">
+            <div class="section-title">Hardware Status</div>
+            <div class="status-grid">
+                <div class="status-label">Connection:</div>
+                <div class="status-value" id="status-indicator">DISCONNECTED</div>
+
+                <div class="status-label">Active COM:</div>
+                <div class="status-value" id="active-com">None</div>
+
+                <div class="status-label">Packets Read:</div>
+                <div class="status-value" id="packet-count">0</div>
+
+                <div class="status-label">Sample Rate:</div>
+                <div class="status-value" id="sample-rate">0.0 Hz</div>
+
+                <div class="status-label">Elapsed Time:</div>
+                <div class="status-value" id="elapsed-time">00:00:00</div>
+
+                <div class="status-label">System Time:</div>
+                <div class="status-value" id="system-time">00:00:00</div>
+            </div>
+        </div>
+
+        <div class="console-log" id="console-log"></div>
+    </div>
+
+    <!-- --- MAIN CONTAINER --- -->
+    <div class="main-content">
+        
+        <!-- Dashboard Top Grid -->
+        <div class="dashboard-grid">
+            
+            <!-- Card 1: Analog Gauge -->
+            <div class="card">
+                <div class="card-title">Analog Gauge</div>
+                <canvas class="canvas-gauge" id="gauge-analog"></canvas>
+            </div>
+
+            <!-- Card 2: Speedometer -->
+            <div class="card">
+                <div class="card-title">Speedometer</div>
+                <canvas class="canvas-gauge" id="gauge-speedo"></canvas>
+            </div>
+
+            <!-- Card 3: Metrics & Sparkline -->
+            <div class="card" style="align-items: stretch; justify-content: space-between;">
+                <div class="readout-panel">
+                    <div class="card-title">Live Analysis</div>
+                    <div class="large-val-row">
+                        <div class="large-value" id="live-voltage">0.00</div>
+                        <div class="large-unit">V</div>
+                    </div>
+                    <div class="readout-subtext" id="live-adc">ADC: 0</div>
+                </div>
+                
+                <div class="sparkline-box">
+                    <canvas id="sparkline-canvas"></canvas>
+                </div>
+
+                <div class="divider" style="margin: 8px 0;"></div>
+
+                <div class="stats-grid-card">
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Min V</div>
+                        <div class="mini-stat-value" id="stat-min">0.00</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Max V</div>
+                        <div class="mini-stat-value" id="stat-max">0.00</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Avg V</div>
+                        <div class="mini-stat-value" id="stat-avg">0.00</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Mov Avg</div>
+                        <div class="mini-stat-value" id="stat-ma">0.00</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Peak V</div>
+                        <div class="mini-stat-value" id="stat-peak">0.00</div>
+                    </div>
+                    <div class="mini-stat">
+                        <div class="mini-stat-title">Std Dev</div>
+                        <div class="mini-stat-value" id="stat-std">0.00</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs & Charts Area -->
+        <div class="tabs-container">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="tab-rt">Real-time Signals</button>
+                <button class="tab-btn" data-tab="tab-adv">Advanced Analysis</button>
+                <button class="tab-btn" data-tab="tab-sum">Performance Summary</button>
+                <button class="tab-btn" data-tab="tab-trend">Trend Analysis</button>
+            </div>
+
+            <!-- Tab 1: Real-time Plots -->
+            <div class="tab-content active" id="tab-rt">
+                <div class="chart-container">
+                    <canvas id="chart-voltage"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-adc"></canvas>
+                </div>
+            </div>
+
+            <!-- Tab 2: Advanced Plots -->
+            <div class="tab-content" id="tab-adv">
+                <div class="chart-container">
+                    <canvas id="chart-area"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-scatter"></canvas>
+                </div>
+            </div>
+
+            <!-- Tab 3: Summary Plots -->
+            <div class="tab-content" id="tab-sum">
+                <div class="chart-container">
+                    <canvas id="chart-hist"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="chart-bar"></canvas>
+                </div>
+            </div>
+
+            <!-- Tab 4: Trend Plots -->
+            <div class="tab-content" id="tab-trend">
+                <div class="window-selector-row">
+                    <button class="window-btn active" data-window="10">10 Sec</button>
+                    <button class="window-btn" data-window="30">30 Sec</button>
+                    <button class="window-btn" data-window="60">1 Min</button>
+                    <button class="window-btn" data-window="300">5 Min</button>
+                </div>
+                <div class="chart-container" style="margin-top: 40px;">
+                    <canvas id="chart-trend"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- --- CAPTURE MODAL --- -->
+    <div class="modal" id="capture-modal">
+        <div class="modal-content">
+            <div class="modal-title">Export Graphs as Image</div>
+            <p style="font-size: 12px; color: var(--text-secondary);">Select export configuration:</p>
+            <select class="select-box" id="capture-choice">
+                <option value="active">Active View (Current Tab Plots)</option>
+                <option value="all">All 7 Graphs Together (Stitched Grid)</option>
+                <option value="voltage">Single Graph: Live Voltage</option>
+                <option value="adc">Single Graph: Raw ADC Value</option>
+                <option value="area">Single Graph: Area Graph</option>
+                <option value="scatter">Single Graph: Scatter Plot</option>
+                <option value="hist">Single Graph: Voltage Distribution</option>
+                <option value="bar">Single Graph: Performance Bars</option>
+                <option value="trend">Single Graph: Windowed Trend</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="modal-btn" id="modal-cancel">Cancel</button>
+                <button class="modal-btn btn-primary" id="modal-save" style="border: none;">Capture & Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- --- JS LOGIC --- -->
+    <script>
+        // Database & Configuration
+        const MAX_SAMPLES = 10000;
+        let dataBuffer = {
+            timestamps: [],    // Date objects
+            elapsed: [],       // float (seconds)
+            adc: [],           // int
+            voltages: []       // float
+        };
+        let peakVoltage = 0.0;
+        let totalPackets = 0;
+        let connectionStartTime = null;
+        let activeTrendWindow = 10; // seconds
+
+        // Serial connection variables
+        let port = null;
+        let reader = null;
+        let inputDone = null;
+        let inputStream = null;
+        let serialReadLoopActive = false;
+        let lineBuffer = "";
+
+        // Simulator variables
+        let simIntervalId = null;
+        let simStartTime = 0;
+        let isSimulating = false;
+
+        // Sampling Rate helper variables
+        let rateTimes = [];
+
+        // Chart instances
+        let charts = {};
+
+        // Custom canvas gauges
+        const gaugeAnalog = document.getElementById("gauge-analog");
+        const gaugeSpeedo = document.getElementById("gauge-speedo");
+
+        window.addEventListener("DOMContentLoaded", () => {
+            initSystem();
+            initCharts();
+            drawGauges(0.0);
+            updateSystemTime();
+            setInterval(updateSystemTime, 1000);
+            setInterval(updateElapsedAndRate, 200); // 5Hz updates for elapsed details
+        });
+
+        // System setup
+        function initSystem() {
+            // Tab switcher
+            const tabButtons = document.querySelectorAll(".tab-btn");
+            tabButtons.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    tabButtons.forEach(b => b.classList.remove("active"));
+                    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+                    btn.classList.add("active");
+                    const targetTab = document.getElementById(btn.getAttribute("data-tab"));
+                    targetTab.classList.add("active");
+                    
+                    // Force resize recalculations for visible charts
+                    Object.values(charts).forEach(c => c.resize());
+                    updatePlots();
+                });
+            });
+
+            // Trend window switcher
+            const winButtons = document.querySelectorAll(".window-btn");
+            winButtons.forEach(btn => {
+                btn.addEventListener("click", () => {
+                    winButtons.forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    activeTrendWindow = parseInt(btn.getAttribute("data-window"));
+                    updatePlots();
+                });
+            });
+
+            // Connect button Web Serial API
+            document.getElementById("btn-connect").addEventListener("click", connectHardware);
+            document.getElementById("btn-disconnect").addEventListener("click", disconnectPort);
+            document.getElementById("btn-simulator").addEventListener("click", toggleSimulator);
+
+            // Operations
+            document.getElementById("btn-reset").addEventListener("click", resetAllData);
+            document.getElementById("btn-clear").addEventListener("click", clearGraphsOnly);
+            document.getElementById("btn-export-csv").addEventListener("click", exportCSV);
+
+            // Modal dialog image capture
+            const modal = document.getElementById("capture-modal");
+            document.getElementById("btn-save-image").addEventListener("click", () => modal.style.display = "flex");
+            document.getElementById("modal-cancel").addEventListener("click", () => modal.style.display = "none");
+            document.getElementById("modal-save").addEventListener("click", saveSelectedImage);
+        }
+
+        // --- WEB SERIAL COMMUNICATION ---
+        async function connectHardware() {
+            if (!("serial" in navigator)) {
+                alert("Web Serial API is not supported in this browser. Please use Google Chrome or Microsoft Edge.");
+                return;
+            }
+            
+            try {
+                // Request port
+                port = await navigator.serial.requestPort();
+                
+                await port.open({ baudRate: 115200 });
+                logConsole("", false);
+
+                connectionStartTime = Date.now();
+                totalPackets = 0;
+                rateTimes = [];
+                setConnectedState("CONNECTED", port.getInfo().usbVendorId ? "USB Port" : "COM Port");
+
+                // Start serial reading loops
+                serialReadLoopActive = true;
+                readSerialStream();
+            } catch (err) {
+                console.error(err);
+                logConsole("Connection failed: " + err.message, true);
+                setConnectedState("DISCONNECTED", "None");
+            }
+        }
+
+        async function readSerialStream() {
+            const textDecoder = new TextDecoderStream();
+            inputDone = port.readable.pipeTo(textDecoder.writable);
+            inputStream = textDecoder.readable;
+            reader = inputStream.getReader();
+
+            try {
+                while (serialReadLoopActive) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        break;
+                    }
+                    if (value) {
+                        parseIncomingBytes(value);
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+                logConsole("Serial error: " + err.message, true);
+                disconnectPort();
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        function parseIncomingBytes(chunk) {
+            lineBuffer += chunk;
+            let lines = lineBuffer.split("\n");
+            lineBuffer = lines.pop(); // Keep partial line
+
+            for (let line of lines) {
+                line = line.trim();
+                if (line) {
+                    let parts = line.split(",");
+                    if (parts.length === 2) {
+                        let adc = parseInt(parts[0]);
+                        let voltage = parseFloat(parts[1]);
+                        if (!isNaN(adc) && !isNaN(voltage)) {
+                            addSample(adc, voltage);
+                        }
+                    }
+                }
+            }
+        }
+
+        async function disconnectPort() {
+            serialReadLoopActive = false;
+            if (reader) {
+                await reader.cancel();
+                await inputDone.catch(() => {});
+                reader = null;
+                inputDone = null;
+            }
+            if (port) {
+                await port.close();
+                port = null;
+            }
+            setConnectedState("DISCONNECTED", "None");
+        }
+
+        // --- SIMULATOR LOGIC ---
+        function toggleSimulator() {
+            if (isSimulating) {
+                clearInterval(simIntervalId);
+                isSimulating = false;
+                document.getElementById("btn-simulator").innerText = "Run Simulator Mode";
+                setConnectedState("DISCONNECTED", "None");
+            } else {
+                disconnectPort(); // Disconnect real hardware
+                
+                simStartTime = Date.now();
+                connectionStartTime = simStartTime;
+                totalPackets = 0;
+                rateTimes = [];
+                isSimulating = true;
+                document.getElementById("btn-simulator").innerText = "Stop Simulator Mode";
+                setConnectedState("CONNECTED (SIM)", "SIMULATOR");
+                
+                // Simulate at 1Hz (1 reading per second) to match the new 1-second requirement
+                simIntervalId = setInterval(generateSimulatedData, 1000);
+            }
+        }
+
+        function generateSimulatedData() {
+            let t = (Date.now() - simStartTime) / 1000.0;
+            
+            // Replicate drift, signal, and high-frequency noise
+            let drift = 1.5 * Math.sin(2 * Math.PI * 0.03 * t);
+            let signal = 2.5 * Math.sin(2 * Math.PI * 0.2 * t);
+            let noise = (Math.random() - 0.5) * 0.16;
+            let spike = (Math.random() < 0.01) ? (Math.random() > 0.5 ? 1.5 : -1.5) : 0.0;
+            
+            let voltage = 5.0 + drift + signal + noise + spike;
+            voltage = Math.max(0.0, Math.min(10.0, voltage));
+            
+            let adc = Math.round((voltage / 10.0) * 1023.0 + (Math.random() - 0.5) * 2);
+            adc = Math.max(0, Math.min(1023, adc));
+
+            addSample(adc, voltage);
+        }
+
+        // --- DATA COLLECTION ---
+        function addSample(adc, voltage) {
+            let now = new Date();
+            let elapsedSec = connectionStartTime ? (Date.now() - connectionStartTime) / 1000.0 : 0.0;
+
+            dataBuffer.timestamps.push(now);
+            dataBuffer.elapsed.push(elapsedSec);
+            dataBuffer.adc.push(adc);
+            dataBuffer.voltages.push(voltage);
+
+            // Enforce max length ring buffer
+            if (dataBuffer.voltages.length > MAX_SAMPLES) {
+                dataBuffer.timestamps.shift();
+                dataBuffer.elapsed.shift();
+                dataBuffer.adc.shift();
+                dataBuffer.voltages.shift();
+            }
+
+            totalPackets++;
+            if (voltage > peakVoltage) {
+                peakVoltage = voltage;
+            }
+
+            // Track time for instantaneous sampling rate
+            rateTimes.push(Date.now());
+            if (rateTimes.length > 50) {
+                rateTimes.shift();
+            }
+
+            // Update UI widgets
+            document.getElementById("live-voltage").innerText = voltage.toFixed(2);
+            document.getElementById("live-adc").innerText = "ADC: " + adc;
+            document.getElementById("packet-count").innerText = totalPackets;
+
+            // Recalculate stats and draw
+            recalcStats();
+            drawGauges(voltage);
+            updatePlots();
+        }
+
+        function recalcStats() {
+            let len = dataBuffer.voltages.length;
+            if (len === 0) return;
+
+            let cur = dataBuffer.voltages[len - 1];
+            let minVal = Math.min(...dataBuffer.voltages);
+            let maxVal = Math.max(...dataBuffer.voltages);
+            let avgVal = dataBuffer.voltages.reduce((a, b) => a + b, 0) / len;
+
+            // Moving average (last 50 values)
+            let maWin = Math.min(50, len);
+            let maSlice = dataBuffer.voltages.slice(len - maWin);
+            let maVal = maSlice.reduce((a, b) => a + b, 0) / maWin;
+
+            // Std deviation
+            let sumSq = dataBuffer.voltages.reduce((a, b) => a + Math.pow(b - avgVal, 2), 0);
+            let stdVal = Math.sqrt(sumSq / len);
+
+            document.getElementById("stat-min").innerText = minVal.toFixed(2) + " V";
+            document.getElementById("stat-max").innerText = maxVal.toFixed(2) + " V";
+            document.getElementById("stat-avg").innerText = avgVal.toFixed(2) + " V";
+            document.getElementById("stat-ma").innerText = maVal.toFixed(2) + " V";
+            document.getElementById("stat-peak").innerText = peakVoltage.toFixed(2) + " V";
+            document.getElementById("stat-std").innerText = stdVal.toFixed(3) + " V";
+        }
+
+        // --- BUTTON OPERATIONS ---
+        function resetAllData() {
+            dataBuffer.timestamps = [];
+            dataBuffer.elapsed = [];
+            dataBuffer.adc = [];
+            dataBuffer.voltages = [];
+            peakVoltage = 0.0;
+            totalPackets = 0;
+            rateTimes = [];
+            connectionStartTime = isSimulating || serialReadLoopActive ? Date.now() : null;
+
+            document.getElementById("live-voltage").innerText = "0.00";
+            document.getElementById("live-adc").innerText = "ADC: 0";
+            document.getElementById("packet-count").innerText = "0";
+
+            document.getElementById("stat-min").innerText = "0.00 V";
+            document.getElementById("stat-max").innerText = "0.00 V";
+            document.getElementById("stat-avg").innerText = "0.00 V";
+            document.getElementById("stat-ma").innerText = "0.00 V";
+            document.getElementById("stat-peak").innerText = "0.00 V";
+            document.getElementById("stat-std").innerText = "0.00 V";
+
+            drawGauges(0.0);
+            clearCharts();
+            logConsole("Data and metrics hard reset.", false);
+        }
+
+        function clearGraphsOnly() {
+            clearCharts();
+            logConsole("Charts cleared.", false);
+        }
+
+        function clearCharts() {
+            Object.values(charts).forEach(c => {
+                c.data.labels = [];
+                c.data.datasets.forEach(d => d.data = []);
+                c.update("none");
+            });
+            // Clear sparkline
+            const spCanvas = document.getElementById("sparkline-canvas");
+            const spCtx = spCanvas.getContext("2d");
+            spCtx.clearRect(0, 0, spCanvas.width, spCanvas.height);
+        }
+
+        function exportCSV() {
+            if (dataBuffer.elapsed.length === 0) {
+                alert("No data available to export.");
+                return;
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Timestamp (Unix),Elapsed Time (s),ADC Value,Voltage (V)\r\n";
+            
+            for (let i = 0; i < dataBuffer.elapsed.length; i++) {
+                csvContent += `${dataBuffer.timestamps[i].getTime()},${dataBuffer.elapsed[i]},${dataBuffer.adc[i]},${dataBuffer.voltages[i]}\r\n`;
+            }
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "esp8266_voltage_data.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            logConsole("Data exported to CSV.", false);
+        }
+
+        // --- GRAPH SELECTION & SAVE GRID LOGIC ---
+        function saveSelectedImage() {
+            const choice = document.getElementById("capture-choice").value;
+            const modal = document.getElementById("capture-modal");
+            modal.style.display = "none";
+
+            // Grab chart canvases
+            const canvasMap = {
+                voltage: "chart-voltage",
+                adc: "chart-adc",
+                area: "chart-area",
+                scatter: "chart-scatter",
+                hist: "chart-hist",
+                bar: "chart-bar",
+                trend: "chart-trend"
+            };
+
+            if (choice === "active") {
+                // Active view tab layout (we can stitch the two charts inside the active tab container)
+                const activeTab = document.querySelector(".tab-content.active");
+                const canvasElements = activeTab.querySelectorAll("canvas");
+                
+                if (canvasElements.length === 2) {
+                    stitchTwoCanvases(canvasElements[0], canvasElements[1], "active_tab_graphs.png");
+                } else {
+                    // Single windowed chart
+                    triggerDownload(canvasElements[0], "trend_graph.png");
+                }
+            } else if (choice === "all") {
+                // Stitch all 7 canvases in a grid layout (3 rows of 2, 1 centered row at bottom)
+                stitchAllSevenCanvases();
+            } else {
+                // Single chart choice
+                const targetCanvas = document.getElementById(canvasMap[choice]);
+                triggerDownload(targetCanvas, choice + "_graph.png");
+            }
+        }
+
+        function triggerDownload(canvas, filename) {
+            const url = canvas.toDataURL("image/png");
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename;
+            a.click();
+            logConsole(`Saved graph photo: ${filename}`, false);
+        }
+
+        function stitchTwoCanvases(can1, can2, filename) {
+            let w = can1.width;
+            let h = can1.height;
+
+            const gridCanvas = document.createElement("canvas");
+            gridCanvas.width = w * 2 + 16;
+            gridCanvas.height = h;
+
+            const ctx = gridCanvas.getContext("2d");
+            ctx.fillStyle = "#F8FAFC"; // Background fill
+            ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+
+            ctx.drawImage(can1, 0, 0);
+            ctx.drawImage(can2, w + 16, 0);
+
+            triggerDownload(gridCanvas, filename);
+        }
+
+        function stitchAllSevenCanvases() {
+            const chartIds = ["chart-voltage", "chart-adc", "chart-area", "chart-scatter", "chart-hist", "chart-bar", "chart-trend"];
+            const canvases = chartIds.map(id => document.getElementById(id));
+            
+            let w = canvases[0].width;
+            let h = canvases[0].height;
+
+            const gridCanvas = document.createElement("canvas");
+            gridCanvas.width = w * 2 + 16;
+            gridCanvas.height = h * 4 + 72; // 4 rows
+
+            const ctx = gridCanvas.getContext("2d");
+            ctx.fillStyle = "#F8FAFC";
+            ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+
+            // Row 0
+            ctx.drawImage(canvases[0], 0, 0);
+            ctx.drawImage(canvases[1], w + 16, 0);
+            
+            // Row 1
+            ctx.drawImage(canvases[2], 0, h + 24);
+            ctx.drawImage(canvases[3], w + 16, h + 24);
+            
+            // Row 2
+            ctx.drawImage(canvases[4], 0, (h + 24) * 2);
+            ctx.drawImage(canvases[5], w + 16, (h + 24) * 2);
+            
+            // Row 3 (Trend Graph centered)
+            ctx.drawImage(canvases[6], (gridCanvas.width - w) / 2, (h + 24) * 3);
+
+            triggerDownload(gridCanvas, "all_7_graphs.png");
+        }
+
+        // --- HELPER LOGGERS & CLOCKS ---
+        function setConnectedState(status, portName) {
+            const ind = document.getElementById("status-indicator");
+            ind.innerText = status;
+            ind.style.color = status.includes("CONN") ? "var(--success)" : "var(--danger)";
+            
+            document.getElementById("active-com").innerText = portName;
+            document.getElementById("btn-connect").disabled = status.includes("CONN") && !status.includes("SIM");
+            document.getElementById("btn-disconnect").disabled = !status.includes("CONN") || status.includes("SIM");
+        }
+
+        function logConsole(msg, isError) {
+            const logBox = document.getElementById("console-log");
+            logBox.innerText = msg;
+            logBox.style.color = isError ? "var(--danger)" : "var(--accent)";
+        }
+
+        function updateSystemTime() {
+            let now = new Date();
+            let pad = (num) => String(num).padStart(2, "0");
+            document.getElementById("system-time").innerText = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        }
+
+        function updateElapsedAndRate() {
+            // Update Elapsed Connection Time
+            if (connectionStartTime && (serialReadLoopActive || isSimulating)) {
+                let el = (Date.now() - connectionStartTime) / 1000.0;
+                let h = Math.floor(el / 3600);
+                let m = Math.floor((el % 3600) / 60);
+                let s = Math.floor(el % 60);
+                let pad = (num) => String(num).padStart(2, "0");
+                document.getElementById("elapsed-time").innerText = `${pad(h)}:${pad(m)}:${pad(s)}`;
+            }
+
+            // Update Sampling Rate (Based on timestamps of recent packets in buffer)
+            if (rateTimes.length >= 2) {
+                let diff = (rateTimes[rateTimes.length - 1] - rateTimes[0]) / 1000.0;
+                let rate = diff > 0 ? (rateTimes.length - 1) / diff : 0.0;
+                document.getElementById("sample-rate").innerText = rate.toFixed(1) + " Hz";
+            } else {
+                document.getElementById("sample-rate").innerText = "0.0 Hz";
+            }
+        }
+
+        // --- CANVASE GAUGES & NEEEDLES ---
+        function drawGauges(voltage) {
+            // Render Analog Gauge
+            const ctxAnalog = gaugeAnalog.getContext("2d");
+            ctxAnalog.clearRect(0, 0, gaugeAnalog.width, gaugeAnalog.height);
+            
+            // Handle high DPI
+            let ratio = window.devicePixelRatio || 1;
+            gaugeAnalog.width = 220 * ratio;
+            gaugeAnalog.height = 140 * ratio;
+            ctxAnalog.scale(ratio, ratio);
+            
+            let cx = 110, cy = 115, r = 85;
+            
+            // Draw background dial track
+            ctxAnalog.lineWidth = 10;
+            ctxAnalog.lineCap = "round";
+            ctxAnalog.strokeStyle = "#E2E8F0";
+            ctxAnalog.beginPath();
+            ctxAnalog.arc(cx, cy, r, Math.PI, 0); // Semicircle
+            ctxAnalog.stroke();
+
+            // Draw active levels
+            ctxAnalog.strokeStyle = "#2563EB";
+            ctxAnalog.beginPath();
+            let endAngle = Math.PI + (voltage / 10.0) * Math.PI;
+            ctxAnalog.arc(cx, cy, r, Math.PI, endAngle);
+            ctxAnalog.stroke();
+
+            // Draw Needle
+            let needleAngle = Math.PI + (voltage / 10.0) * Math.PI;
+            ctxAnalog.lineWidth = 3;
+            ctxAnalog.strokeStyle = "#1E293B";
+            ctxAnalog.beginPath();
+            ctxAnalog.moveTo(cx, cy);
+            ctxAnalog.lineTo(cx + (r - 10) * Math.cos(needleAngle), cy + (r - 10) * Math.sin(needleAngle));
+            ctxAnalog.stroke();
+
+            // Dial Pin
+            ctxAnalog.fillStyle = "#1E293B";
+            ctxAnalog.beginPath();
+            ctxAnalog.arc(cx, cy, 6, 0, 2*Math.PI);
+            ctxAnalog.fill();
+
+            // Digital readout in gauge
+            ctxAnalog.font = "bold 16px 'Segoe UI'";
+            ctxAnalog.fillStyle = "#0F172A";
+            ctxAnalog.textAlign = "center";
+            ctxAnalog.fillText(voltage.toFixed(2) + " V", cx, cy - 25);
+            ctxAnalog.font = "bold 9px 'Segoe UI'";
+            ctxAnalog.fillStyle = "#64748B";
+            ctxAnalog.fillText("ANALOG VOLTAGE", cx, cy - 10);
+
+            // Render Speedometer
+            const ctxSpeedo = gaugeSpeedo.getContext("2d");
+            ctxSpeedo.clearRect(0, 0, gaugeSpeedo.width, gaugeSpeedo.height);
+            gaugeSpeedo.width = 220 * ratio;
+            gaugeSpeedo.height = 140 * ratio;
+            ctxSpeedo.scale(ratio, ratio);
+            
+            // Sweeping Progress Circle (From 240 deg to -60 deg)
+            let startSpeedoRad = (5 / 6) * Math.PI; // 150 degrees
+            let sweepSpanRad = (4 / 3) * Math.PI; // 240 degrees (range 0 to 10 V)
+            let endSpeedoRad = startSpeedoRad + (voltage / 10.0) * sweepSpanRad;
+
+            ctxSpeedo.lineWidth = 14;
+            ctxSpeedo.lineCap = "round";
+            ctxSpeedo.strokeStyle = "#F1F5F9";
+            ctxSpeedo.beginPath();
+            ctxSpeedo.arc(cx, cy - 20, 60, startSpeedoRad, startSpeedoRad + sweepSpanRad);
+            ctxSpeedo.stroke();
+
+            // Active Speed fill
+            ctxSpeedo.strokeStyle = "#2563EB";
+            ctxSpeedo.beginPath();
+            ctxSpeedo.arc(cx, cy - 20, 60, startSpeedoRad, endSpeedoRad);
+            ctxSpeedo.stroke();
+
+            // Ticks
+            ctxSpeedo.font = "bold 20px 'Segoe UI'";
+            ctxSpeedo.fillStyle = "#0F172A";
+            ctxSpeedo.textAlign = "center";
+            ctxSpeedo.fillText(voltage.toFixed(2), cx, cy - 20);
+            
+            ctxSpeedo.font = "bold 10px 'Segoe UI'";
+            ctxSpeedo.fillStyle = "#64748B";
+            ctxSpeedo.fillText("VOLTS", cx, cy - 5);
+        }
+
+        // --- CHART JS SETUP ---
+        function initCharts() {
+            // Line colors
+            const gridColor = "#E2E8F0";
+            
+            // Common chart options
+            const chartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 }, // Disable anim for high real-time performance
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        grid: { color: gridColor },
+                        ticks: { color: "#64748B", maxTicksLimit: 8 }
+                    },
+                    y: {
+                        grid: { color: gridColor },
+                        ticks: { color: "#64748B" }
+                    }
+                }
+            };
+
+            // 1. Voltage Chart
+            charts.voltage = new Chart(document.getElementById("chart-voltage"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: "Voltage", borderColor: "#2563EB", borderWidth: 2, pointRadius: 0, data: [] },
+                        { label: "Moving Average", borderColor: "#F59E0B", borderWidth: 2, borderDash: [5, 5], pointRadius: 0, data: [] }
+                    ]
+                },
+                options: { ...chartOptions, plugins: { legend: { display: true } } }
+            });
+
+            // 2. ADC Chart
+            charts.adc = new Chart(document.getElementById("chart-adc"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{ label: "Raw ADC", borderColor: "#475569", borderWidth: 1.5, pointRadius: 0, data: [] }]
+                },
+                options: chartOptions
+            });
+
+            // 3. Area Chart
+            charts.area = new Chart(document.getElementById("chart-area"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{ label: "Voltage", borderColor: "#2563EB", backgroundColor: "rgba(37, 99, 235, 0.15)", fill: true, pointRadius: 0, data: [] }]
+                },
+                options: chartOptions
+            });
+
+            // 4. Scatter Plot
+            charts.scatter = new Chart(document.getElementById("chart-scatter"), {
+                type: "scatter",
+                data: {
+                    datasets: [{ label: "Samples", borderColor: "#2563EB", backgroundColor: "#2563EB", pointRadius: 2.5, data: [] }]
+                },
+                options: chartOptions
+            });
+
+            // 5. Histogram Chart
+            charts.hist = new Chart(document.getElementById("chart-hist"), {
+                type: "bar",
+                data: {
+                    labels: Array.from({length: 20}, (_, i) => (i*0.5).toFixed(1)),
+                    datasets: [{ label: "Frequency", backgroundColor: "#3B82F6", data: Array(20).fill(0) }]
+                },
+                options: chartOptions
+            });
+
+            // 6. Bar Comparison Chart
+            charts.bar = new Chart(document.getElementById("chart-bar"), {
+                type: "bar",
+                data: {
+                    labels: ["Current", "Average", "Maximum", "Minimum"],
+                    datasets: [{
+                        backgroundColor: ["#2563EB", "#60A5FA", "#EF4444", "#10B981"],
+                        data: [0, 0, 0, 0]
+                    }]
+                },
+                options: {
+                    ...chartOptions,
+                    scales: {
+                        y: { min: 0, max: 10, grid: { color: gridColor }, ticks: { color: "#64748B" } }
+                    }
+                }
+            });
+
+            // 7. Trend Chart
+            charts.trend = new Chart(document.getElementById("chart-trend"), {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{ label: "Voltage", borderColor: "#2563EB", borderWidth: 2, pointRadius: 0, data: [] }]
+                },
+                options: chartOptions
+            });
+        }
+
+        function updatePlots() {
+            let len = dataBuffer.voltages.length;
+            if (len === 0) return;
+
+            // Gather recent index values (downsample to 100 entries max to optimize browser rendering!)
+            let step = Math.max(1, Math.floor(len / 100));
+            let xLabels = [];
+            let yVolts = [];
+            let yAdc = [];
+            let yMA = [];
+            
+            // Helper for moving average array
+            for (let i = 0; i < len; i += step) {
+                xLabels.push(dataBuffer.elapsed[i].toFixed(1) + "s");
+                yVolts.push(dataBuffer.voltages[i]);
+                yAdc.push(dataBuffer.adc[i]);
+                
+                // MA calculation
+                let window = Math.min(50, i + 1);
+                let slice = dataBuffer.voltages.slice(i - window + 1, i + 1);
+                let avg = slice.reduce((a, b) => a + b, 0) / window;
+                yMA.push(avg);
+            }
+
+            // Determine visible tab to optimize rendering (skip updating hidden tabs)
+            const activeTabId = document.querySelector(".tab-content.active").id;
+
+            if (activeTabId === "tab-rt") {
+                // Tab 1: Live Line Charts
+                charts.voltage.data.labels = xLabels;
+                charts.voltage.data.datasets[0].data = yVolts;
+                charts.voltage.data.datasets[1].data = yMA;
+                charts.voltage.update("none");
+
+                charts.adc.data.labels = xLabels;
+                charts.adc.data.datasets[0].data = yAdc;
+                charts.adc.update("none");
+            } else if (activeTabId === "tab-adv") {
+                // Tab 2: Area & Scatter
+                charts.area.data.labels = xLabels;
+                charts.area.data.datasets[0].data = yVolts;
+                charts.area.update("none");
+
+                // Scatter Plot
+                let scatterData = [];
+                for (let i = 0; i < len; i += step) {
+                    scatterData.push({ x: dataBuffer.elapsed[i], y: dataBuffer.voltages[i] });
+                }
+                charts.scatter.data.datasets[0].data = scatterData;
+                charts.scatter.update("none");
+            } else if (activeTabId === "tab-sum") {
+                // Tab 3: Distribution & Summary bars
+                // Update Bar comparison
+                let minVal = Math.min(...dataBuffer.voltages);
+                let maxVal = Math.max(...dataBuffer.voltages);
+                let avgVal = dataBuffer.voltages.reduce((a, b) => a + b, 0) / len;
+                charts.bar.data.datasets[0].data = [
+                    dataBuffer.voltages[len - 1],
+                    avgVal,
+                    maxVal,
+                    minVal
+                ];
+                charts.bar.update("none");
+
+                // Update Histogram
+                let binCounts = Array(20).fill(0);
+                for (let v of dataBuffer.voltages) {
+                    let binIdx = Math.floor(v / 0.5);
+                    binIdx = Math.max(0, Math.min(19, binIdx));
+                    binCounts[binIdx]++;
+                }
+                charts.hist.data.datasets[0].data = binCounts;
+                charts.hist.update("none");
+            } else if (activeTabId === "tab-trend") {
+                // Tab 4: Filter windowed trend graph
+                let lastElapsed = dataBuffer.elapsed[len - 1];
+                let cutoff = lastElapsed - activeTrendWindow;
+                
+                let trendX = [];
+                let trendY = [];
+                for (let i = 0; i < len; i++) {
+                    if (dataBuffer.elapsed[i] >= cutoff) {
+                        trendX.push(dataBuffer.elapsed[i].toFixed(1) + "s");
+                        trendY.push(dataBuffer.voltages[i]);
+                    }
+                }
+                
+                // Downsample trend if too dense
+                let trendStep = Math.max(1, Math.floor(trendX.length / 100));
+                let fTrendX = [];
+                let fTrendY = [];
+                for (let i = 0; i < trendX.length; i += trendStep) {
+                    fTrendX.push(trendX[i]);
+                    fTrendY.push(trendY[i]);
+                }
+                
+                charts.trend.data.labels = fTrendX;
+                charts.trend.data.datasets[0].data = fTrendY;
+                charts.trend.update("none");
+            }
+
+            // Draw Sparkline (Always drawn, recent 30 samples)
+            drawSparkline();
+        }
+
+        function drawSparkline() {
+            const canvas = document.getElementById("sparkline-canvas");
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Handle DPI
+            let ratio = window.devicePixelRatio || 1;
+            canvas.width = 140 * ratio;
+            canvas.height = 40 * ratio;
+            ctx.scale(ratio, ratio);
+
+            let len = dataBuffer.voltages.length;
+            if (len < 2) return;
+
+            let sparkSamples = Math.min(40, len);
+            let subset = dataBuffer.voltages.slice(len - sparkSamples);
+            
+            let minVal = Math.min(...subset);
+            let maxVal = Math.max(...subset);
+            let range = maxVal - minVal;
+            if (range === 0) range = 1;
+
+            let cellW = 140.0 / (sparkSamples - 1);
+            
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "#3B82F6";
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+            
+            ctx.beginPath();
+            for (let i = 0; i < sparkSamples; i++) {
+                let x = i * cellW;
+                // invert y coordinates (0 is at top)
+                let norm = (subset[i] - minVal) / range;
+                let y = 35 - norm * 30; // 5px padding top/bottom
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    </script>
+</body>
+</html>
